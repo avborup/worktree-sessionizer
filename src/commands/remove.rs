@@ -1,0 +1,65 @@
+use anyhow::{Result, bail};
+use owo_colors::OwoColorize;
+
+use crate::config::Config;
+use crate::git;
+use crate::state::State;
+use crate::tmux;
+use crate::ui;
+
+pub fn run(name: String, delete_branch: bool, force_branch: bool) -> Result<()> {
+    let config = Config::load()?;
+    let mut state = State::load()?;
+
+    let entry = state
+        .worktrees
+        .iter()
+        .find(|e| e.branch == name || e.session_name == name)
+        .cloned();
+
+    let entry = match entry {
+        Some(e) => e,
+        None => bail!(
+            "no tracked worktree matching '{}' (looked at branch and session name)",
+            name
+        ),
+    };
+
+    eprintln!(
+        "\n  removing worktree {} on {}\n",
+        entry.project.magenta(),
+        entry.branch.white().bold(),
+    );
+
+    if tmux::session_exists(&entry.session_name) {
+        ui::step(&format!("killing session {}", entry.session_name.yellow()));
+        tmux::kill_session(&entry.session_name)?;
+    }
+
+    if entry.path.exists()
+        && let Some(proj) = config.find_project(&entry.project)
+    {
+        ui::step(&format!("removing worktree at {}", entry.path.display().dimmed()));
+        git::worktree_remove(&proj.repo_path, &entry.path)?;
+    }
+
+    if (delete_branch || force_branch)
+        && let Some(proj) = config.find_project(&entry.project)
+    {
+        let label = if force_branch { "force-deleting" } else { "deleting" };
+        ui::step(&format!("{} branch {}", label, entry.branch.yellow()));
+        git::branch_delete(&proj.repo_path, &entry.branch, force_branch)?;
+    }
+
+    ui::step("saving metadata");
+    state.remove(&entry.id);
+    state.save()?;
+
+    ui::step_done(&format!(
+        "removed {} · {}\n",
+        entry.project.magenta(),
+        entry.branch.dimmed()
+    ));
+
+    Ok(())
+}
