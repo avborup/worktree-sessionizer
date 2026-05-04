@@ -6,6 +6,7 @@ use crate::tmux;
 
 mod picker;
 
+#[tracing::instrument(level = "info", name = "switch.run")]
 pub fn run() -> Result<()> {
     let mut state = State::load()?;
 

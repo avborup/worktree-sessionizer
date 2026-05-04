@@ -5,6 +5,7 @@ use crate::cli::ProjectAction;
 use crate::config::{Config, ProjectConfig};
 use crate::ui;
 
+#[tracing::instrument(level = "info", name = "project.run", skip(action))]
 pub fn run(action: ProjectAction) -> Result<()> {
     let mut config = Config::load()?;
 

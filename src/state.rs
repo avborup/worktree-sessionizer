@@ -26,6 +26,7 @@ pub struct WorktreeEntry {
 }
 
 impl State {
+    #[tracing::instrument(level = "info", name = "state.load")]
     pub fn load() -> Result<Self> {
         let path = state_path();
         if !path.exists() {

@@ -11,6 +11,7 @@ use crate::state::{State, WorktreeEntry};
 use crate::ui;
 use crate::{git, tmux};
 
+#[tracing::instrument(level = "info", name = "new.run")]
 pub fn run(
     explicit_project: Option<&str>,
     branch: String,

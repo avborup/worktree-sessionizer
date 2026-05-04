@@ -16,17 +16,21 @@ const MAGENTA: Color = Color::Magenta;
 const DIM: Color = Color::DarkGray;
 const WHITE: Color = Color::White;
 
+#[tracing::instrument(level = "info", name = "switch.pick", skip(entries))]
 pub fn pick(entries: &[WorktreeEntry]) -> Result<Option<WorktreeEntry>> {
+    let sessions: Vec<bool> = tracing::info_span!("tmux.session_exists_scan", len = entries.len(),)
+        .in_scope(|| {
+            entries
+                .iter()
+                .map(|e| tmux::session_exists(&e.session_name))
+                .collect()
+        });
+
     crossterm::execute!(std::io::stderr(), EnterAlternateScreen)?;
     terminal::enable_raw_mode()?;
 
     let backend = CrosstermBackend::new(std::io::stderr());
     let mut terminal = Terminal::new(backend)?;
-
-    let sessions: Vec<bool> = entries
-        .iter()
-        .map(|e| tmux::session_exists(&e.session_name))
-        .collect();
 
     let result = run_picker(&mut terminal, entries, &sessions);
 

@@ -7,6 +7,7 @@ use crate::state::{State, WorktreeEntry};
 use crate::tmux;
 use crate::ui::{icons, Age};
 
+#[tracing::instrument(level = "info", name = "list.run")]
 pub fn run(sort: SortOrder, json: bool, verbose: bool) -> Result<()> {
     let state = State::load()?;
 

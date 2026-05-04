@@ -40,6 +40,7 @@ fn dirs_home() -> Option<PathBuf> {
 }
 
 impl Config {
+    #[tracing::instrument(level = "info", name = "config.load")]
     pub fn load() -> Result<Self> {
         let path = config_path();
         if !path.exists() {

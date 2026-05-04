@@ -9,6 +9,7 @@ use crate::git;
 use crate::state::State;
 use crate::ui;
 
+#[tracing::instrument(level = "info", name = "prune.run")]
 pub fn run(days_override: Option<u32>, auto_yes: bool) -> Result<()> {
     let config = Config::load()?;
     let mut state = State::load()?;

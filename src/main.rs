@@ -8,17 +8,18 @@ mod paths;
 mod project;
 mod state;
 mod tmux;
+mod trace;
 mod ui;
 
 use anyhow::Result;
 use clap::Parser;
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    trace::init();
 
-    let cli = cli::Cli::parse();
+    let _root = tracing::info_span!("wt").entered();
+
+    let cli = tracing::info_span!("cli.parse").in_scope(cli::Cli::parse);
 
     match cli.command {
         cli::Command::New { branch, new_branch } => {

@@ -22,6 +22,7 @@ pub fn create_session(name: &str, worktree: &Path, pane_command: &str) -> Result
     Ok(())
 }
 
+#[tracing::instrument(level = "info", skip_all, fields(session = %name), name = "layout.attach_or_switch")]
 pub fn attach_or_switch(name: &str) -> Result<()> {
     if tmux::is_inside_tmux() {
         tmux::switch_client(name)

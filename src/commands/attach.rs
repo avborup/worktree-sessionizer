@@ -10,6 +10,7 @@ use crate::project;
 use crate::state::{State, WorktreeEntry};
 use crate::ui;
 
+#[tracing::instrument(level = "info", name = "attach.run")]
 pub fn run(explicit_project: Option<&str>, path: Option<String>) -> Result<()> {
     let config = Config::load()?;
     let mut state = State::load()?;
