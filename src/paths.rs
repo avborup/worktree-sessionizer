@@ -8,6 +8,11 @@ pub fn data_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".wt"))
 }
 
+/// Plain-text cache: one running tmux session name per line (`tmux list-sessions -F '#{session_name}'`).
+pub fn tmux_sessions_cache_path() -> PathBuf {
+    data_dir().join("tmux_sessions.cache")
+}
+
 pub fn atomic_write(path: &std::path::Path, contents: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)

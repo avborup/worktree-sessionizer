@@ -1,7 +1,47 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
+use std::sync::mpsc;
 
 use anyhow::{Context, Result, bail};
+
+use crate::paths;
+use crate::state::WorktreeEntry;
+
+/// Initial alive flags for the switch picker, optionally paired with a channel that delivers a
+/// fresher vector after a background `tmux list-sessions`.
+pub struct PickerPresence {
+    pub alive: Vec<bool>,
+    pub updates: Option<mpsc::Receiver<Vec<bool>>>,
+}
+
+pub fn prepare_picker_presence(entries: &[WorktreeEntry]) -> PickerPresence {
+    match load_cached_session_names() {
+        Some(snapshot) => PickerPresence {
+            alive: alive_flags(entries, &snapshot),
+            updates: Some(spawn_alive_refresh(entries)),
+        },
+        None => {
+            let running = session_names_running();
+            save_session_names_cache(&running);
+            PickerPresence {
+                alive: alive_flags(entries, &running),
+                updates: None,
+            }
+        },
+    }
+}
+
+/// One `tmux list-sessions` plus membership checks — used by `wt list` and the picker cold path.
+pub fn sessions_alive(entries: &[WorktreeEntry]) -> Vec<bool> {
+    alive_flags(entries, &session_names_running())
+}
+
+pub fn session_names_running() -> HashSet<String> {
+    list_sessions_stdout()
+        .map(|raw| parse_session_names(&raw))
+        .unwrap_or_default()
+}
 
 pub fn session_exists(name: &str) -> bool {
     Command::new("tmux")
@@ -147,3 +187,61 @@ pub fn kill_session(name: &str) -> Result<()> {
     Ok(())
 }
 
+fn list_sessions_stdout() -> Option<Vec<u8>> {
+    let output = Command::new("tmux")
+        .args(["list-sessions", "-F", "#{session_name}"])
+        .output()
+        .ok()?;
+    output.status.success().then_some(output.stdout)
+}
+
+fn parse_session_names(stdout: &[u8]) -> HashSet<String> {
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+fn alive_flags(entries: &[WorktreeEntry], running: &HashSet<String>) -> Vec<bool> {
+    entries
+        .iter()
+        .map(|e| running.contains(&e.session_name))
+        .collect()
+}
+
+fn spawn_alive_refresh(entries: &[WorktreeEntry]) -> mpsc::Receiver<Vec<bool>> {
+    let names: Vec<String> = entries.iter().map(|e| e.session_name.clone()).collect();
+    let (tx, rx) = mpsc::channel();
+
+    std::thread::spawn(move || {
+        let running = session_names_running();
+        save_session_names_cache(&running);
+        let alive: Vec<bool> = names.iter().map(|n| running.contains(n)).collect();
+        let _ = tx.send(alive);
+    });
+
+    rx
+}
+
+fn load_cached_session_names() -> Option<HashSet<String>> {
+    let raw = std::fs::read_to_string(paths::tmux_sessions_cache_path()).ok()?;
+    Some(
+        raw.lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(String::from)
+            .collect(),
+    )
+}
+
+fn save_session_names_cache(names: &HashSet<String>) {
+    let mut lines: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+    lines.sort_unstable();
+    let mut body = lines.join("\n");
+    if !body.is_empty() {
+        body.push('\n');
+    }
+    let _ = paths::atomic_write(&paths::tmux_sessions_cache_path(), &body);
+}

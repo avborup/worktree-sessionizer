@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use jiff::Timestamp;
 use nucleo_matcher::pattern::{Atom, AtomKind, CaseMatching, Normalization};
@@ -16,28 +18,35 @@ const MAGENTA: Color = Color::Magenta;
 const DIM: Color = Color::DarkGray;
 const WHITE: Color = Color::White;
 
+const SESSION_REFRESH_POLL: Duration = Duration::from_millis(50);
+const SESSION_COL_MAX: usize = 35;
+
 #[tracing::instrument(level = "info", name = "switch.pick", skip(entries))]
 pub fn pick(entries: &[WorktreeEntry]) -> Result<Option<WorktreeEntry>> {
-    let sessions: Vec<bool> = tracing::info_span!("tmux.session_exists_scan", len = entries.len(),)
-        .in_scope(|| {
-            entries
-                .iter()
-                .map(|e| tmux::session_exists(&e.session_name))
-                .collect()
-        });
+    let mut presence = tracing::info_span!("tmux.session_presence", len = entries.len())
+        .in_scope(|| tmux::prepare_picker_presence(entries));
 
-    crossterm::execute!(std::io::stderr(), EnterAlternateScreen)?;
-    terminal::enable_raw_mode()?;
+    stderr_ui_begin()?;
 
     let backend = CrosstermBackend::new(std::io::stderr());
     let mut terminal = Terminal::new(backend)?;
+    let result = run_picker(&mut terminal, entries, &mut presence);
 
-    let result = run_picker(&mut terminal, entries, &sessions);
-
-    terminal::disable_raw_mode()?;
-    crossterm::execute!(std::io::stderr(), LeaveAlternateScreen)?;
+    stderr_ui_end()?;
 
     result
+}
+
+fn stderr_ui_begin() -> Result<()> {
+    crossterm::execute!(std::io::stderr(), EnterAlternateScreen)?;
+    terminal::enable_raw_mode()?;
+    Ok(())
+}
+
+fn stderr_ui_end() -> Result<()> {
+    terminal::disable_raw_mode()?;
+    crossterm::execute!(std::io::stderr(), LeaveAlternateScreen)?;
+    Ok(())
 }
 
 struct PickerState {
@@ -46,57 +55,126 @@ struct PickerState {
     filtered: Vec<(usize, u16)>,
 }
 
+impl PickerState {
+    fn new(entries: &[WorktreeEntry]) -> Self {
+        Self {
+            input: String::new(),
+            list_state: ListState::default().with_selected(Some(0)),
+            filtered: entries.iter().enumerate().map(|(i, _)| (i, 0)).collect(),
+        }
+    }
+}
+
+enum PickAction {
+    Continue,
+    Cancel,
+    Choose(Option<WorktreeEntry>),
+}
+
+fn drain_alive_updates(presence: &mut tmux::PickerPresence) {
+    let Some(rx) = presence.updates.as_ref() else {
+        return;
+    };
+    while let Ok(next) = rx.try_recv() {
+        if next.len() == presence.alive.len() {
+            presence.alive = next;
+        }
+    }
+}
+
+/// Blocks until a key event. While waiting, merges tmux refresh payloads and redraws.
+fn wait_polled_key_event(
+    presence: &mut tmux::PickerPresence,
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stderr>>,
+    entries: &[WorktreeEntry],
+    state: &mut PickerState,
+) -> Result<Event> {
+    loop {
+        if event::poll(SESSION_REFRESH_POLL)? {
+            return Ok(event::read()?);
+        }
+        drain_alive_updates(presence);
+        let now = Timestamp::now();
+        terminal.draw(|f| draw(f, entries, &presence.alive, state, now))?;
+    }
+}
+
 fn run_picker(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stderr>>,
     entries: &[WorktreeEntry],
-    sessions: &[bool],
+    presence: &mut tmux::PickerPresence,
 ) -> Result<Option<WorktreeEntry>> {
-    let mut state = PickerState {
-        input: String::new(),
-        list_state: ListState::default().with_selected(Some(0)),
-        filtered: entries.iter().enumerate().map(|(i, _)| (i, 0)).collect(),
-    };
+    let mut state = PickerState::new(entries);
 
     loop {
-        let now = Timestamp::now();
-        terminal.draw(|f| draw(f, entries, sessions, &mut state, now))?;
+        drain_alive_updates(presence);
 
-        if let Event::Key(key) = event::read()? {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
-            match key.code {
-                KeyCode::Esc => return Ok(None),
-                KeyCode::Enter => {
-                    let sel = state.list_state.selected().unwrap_or(0);
-                    return Ok(state
-                        .filtered
-                        .get(sel)
-                        .map(|(idx, _)| entries[*idx].clone()));
-                }
-                KeyCode::Up => {
-                    let i = state.list_state.selected().unwrap_or(0);
-                    state.list_state.select(Some(i.saturating_sub(1)));
-                }
-                KeyCode::Down => {
-                    let i = state.list_state.selected().unwrap_or(0);
-                    let max = state.filtered.len().saturating_sub(1);
-                    state
-                        .list_state
-                        .select(Some(i.min(max).wrapping_add(1).min(max)));
-                }
-                KeyCode::Backspace => {
-                    state.input.pop();
-                    refilter(entries, &mut state);
-                }
-                KeyCode::Char(c) => {
-                    state.input.push(c);
-                    refilter(entries, &mut state);
-                }
-                _ => {}
-            }
+        let now = Timestamp::now();
+        terminal.draw(|f| draw(f, entries, &presence.alive, &mut state, now))?;
+
+        let event = if presence.updates.is_some() {
+            wait_polled_key_event(presence, terminal, entries, &mut state)?
+        } else {
+            event::read()?
+        };
+
+        let Event::Key(key) = event else {
+            continue;
+        };
+
+        match dispatch_pick_key(key, entries, &mut state) {
+            PickAction::Continue => {}
+            PickAction::Cancel => return Ok(None),
+            PickAction::Choose(entry) => return Ok(entry),
         }
     }
+}
+
+fn dispatch_pick_key(
+    key: KeyEvent,
+    entries: &[WorktreeEntry],
+    state: &mut PickerState,
+) -> PickAction {
+    if key.kind != KeyEventKind::Press {
+        return PickAction::Continue;
+    }
+
+    match key.code {
+        KeyCode::Esc => PickAction::Cancel,
+        KeyCode::Enter => PickAction::Choose(selected_entry(entries, state)),
+        KeyCode::Up => {
+            let i = state.list_state.selected().unwrap_or(0);
+            state.list_state.select(Some(i.saturating_sub(1)));
+            PickAction::Continue
+        }
+        KeyCode::Down => {
+            let i = state.list_state.selected().unwrap_or(0);
+            let max = state.filtered.len().saturating_sub(1);
+            state
+                .list_state
+                .select(Some(i.min(max).wrapping_add(1).min(max)));
+            PickAction::Continue
+        }
+        KeyCode::Backspace => {
+            state.input.pop();
+            refilter(entries, state);
+            PickAction::Continue
+        }
+        KeyCode::Char(c) => {
+            state.input.push(c);
+            refilter(entries, state);
+            PickAction::Continue
+        }
+        _ => PickAction::Continue,
+    }
+}
+
+fn selected_entry(entries: &[WorktreeEntry], state: &PickerState) -> Option<WorktreeEntry> {
+    let sel = state.list_state.selected().unwrap_or(0);
+    state
+        .filtered
+        .get(sel)
+        .map(|(idx, _)| entries[*idx].clone())
 }
 
 fn refilter(entries: &[WorktreeEntry], state: &mut PickerState) {
@@ -129,7 +207,7 @@ fn refilter(entries: &[WorktreeEntry], state: &mut PickerState) {
 fn draw(
     f: &mut Frame,
     entries: &[WorktreeEntry],
-    sessions: &[bool],
+    alive: &[bool],
     state: &mut PickerState,
     now: Timestamp,
 ) {
@@ -165,7 +243,7 @@ fn draw(
     let items: Vec<ListItem> = state
         .filtered
         .iter()
-        .map(|(idx, _)| build_row(entries, sessions, *idx, now, session_col_w))
+        .map(|(idx, _)| build_row(entries, alive, *idx, now, session_col_w))
         .collect();
 
     let count = state.filtered.len();
@@ -203,9 +281,6 @@ fn draw(
     f.render_widget(Paragraph::new(help), chunks[2]);
 }
 
-/// Width cap for the session-name column; longer names are truncated.
-const SESSION_COL_MAX: usize = 35;
-
 fn session_column_width(entries: &[WorktreeEntry], filtered: &[(usize, u16)]) -> usize {
     filtered
         .iter()
@@ -222,22 +297,22 @@ fn align_session_name(name: &str, width: usize) -> String {
 
 fn build_row(
     entries: &[WorktreeEntry],
-    sessions: &[bool],
+    alive: &[bool],
     idx: usize,
     now: Timestamp,
     session_col_w: usize,
 ) -> ListItem<'static> {
     let e = &entries[idx];
-    let alive = sessions[idx];
+    let is_alive = alive[idx];
     let age = Age::from_timestamps(now, e.last_used_at);
     let age_color = age.bracket().ratatui_color();
 
-    let status_icon = if alive {
+    let status_icon = if is_alive {
         "  ".to_string()
     } else {
         icons::INACTIVE.to_string()
     };
-    let status_color = if alive { Color::Green } else { DIM };
+    let status_color = if is_alive { Color::Green } else { DIM };
 
     let spans = vec![
         Span::styled(status_icon, Style::default().fg(status_color)),

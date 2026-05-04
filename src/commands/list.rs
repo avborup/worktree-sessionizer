@@ -65,12 +65,13 @@ fn print_compact(entries: &[WorktreeEntry], now: Timestamp) {
         "BRANCH".dimmed(),
     );
 
-    for e in entries {
-        let alive = tmux::session_exists(&e.session_name);
+    let alive_flags = tmux::sessions_alive(entries);
+
+    for (e, alive) in entries.iter().zip(alive_flags.iter()) {
         let age = Age::from_timestamps(now, e.last_used_at);
         let bracket = age.bracket();
 
-        let status = if alive {
+        let status = if *alive {
             "  ".to_string()
         } else {
             icons::INACTIVE.dimmed().to_string()
@@ -94,12 +95,13 @@ fn print_compact(entries: &[WorktreeEntry], now: Timestamp) {
 }
 
 fn print_verbose(entries: &[WorktreeEntry], now: Timestamp) {
-    for (i, e) in entries.iter().enumerate() {
-        let alive = tmux::session_exists(&e.session_name);
+    let alive_flags = tmux::sessions_alive(entries);
+
+    for (i, (e, alive)) in entries.iter().zip(alive_flags.iter()).enumerate() {
         let age = Age::from_timestamps(now, e.last_used_at);
         let bracket = age.bracket();
 
-        let status = if alive {
+        let status = if *alive {
             " ".to_string()
         } else {
             icons::INACTIVE.dimmed().to_string()
