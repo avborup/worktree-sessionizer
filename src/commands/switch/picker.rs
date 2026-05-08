@@ -20,6 +20,7 @@ const WHITE: Color = Color::White;
 
 const SESSION_REFRESH_POLL: Duration = Duration::from_millis(50);
 const SESSION_COL_MAX: usize = 35;
+const PROJECT_COL_MAX: usize = 28;
 
 #[tracing::instrument(level = "info", name = "switch.pick", skip(entries))]
 pub fn pick(entries: &[WorktreeEntry]) -> Result<Option<WorktreeEntry>> {
@@ -239,11 +240,22 @@ fn draw(
 
     f.set_cursor_position((chunks[0].x + state.input.len() as u16 + 1, chunks[0].y + 1));
 
-    let session_col_w = session_column_width(entries, &state.filtered);
+    let project_col_w = capped_column_width(
+        entries,
+        &state.filtered,
+        PROJECT_COL_MAX,
+        |e| e.project.chars().count(),
+    );
+    let session_col_w = capped_column_width(
+        entries,
+        &state.filtered,
+        SESSION_COL_MAX,
+        |e| e.session_name.chars().count(),
+    );
     let items: Vec<ListItem> = state
         .filtered
         .iter()
-        .map(|(idx, _)| build_row(entries, alive, *idx, now, session_col_w))
+        .map(|(idx, _)| build_row(entries, alive, *idx, now, project_col_w, session_col_w))
         .collect();
 
     let count = state.filtered.len();
@@ -281,17 +293,22 @@ fn draw(
     f.render_widget(Paragraph::new(help), chunks[2]);
 }
 
-fn session_column_width(entries: &[WorktreeEntry], filtered: &[(usize, u16)]) -> usize {
+fn capped_column_width(
+    entries: &[WorktreeEntry],
+    filtered: &[(usize, u16)],
+    cap: usize,
+    mut measure: impl FnMut(&WorktreeEntry) -> usize,
+) -> usize {
     filtered
         .iter()
-        .map(|(idx, _)| entries[*idx].session_name.chars().count())
+        .map(|(idx, _)| measure(&entries[*idx]))
         .max()
         .unwrap_or(0)
-        .min(SESSION_COL_MAX)
+        .min(cap)
 }
 
-fn align_session_name(name: &str, width: usize) -> String {
-    let truncated: String = name.chars().take(width).collect();
+fn align_fixed_field(value: &str, width: usize) -> String {
+    let truncated: String = value.chars().take(width).collect();
     format!("{:<width$}", truncated, width = width)
 }
 
@@ -300,6 +317,7 @@ fn build_row(
     alive: &[bool],
     idx: usize,
     now: Timestamp,
+    project_col_w: usize,
     session_col_w: usize,
 ) -> ListItem<'static> {
     let e = &entries[idx];
@@ -320,9 +338,12 @@ fn build_row(
             format!("{:<3}  ", age.label()),
             Style::default().fg(age_color),
         ),
-        Span::styled(format!("{}  ", e.project), Style::default().fg(MAGENTA)),
         Span::styled(
-            format!("{} ", align_session_name(&e.session_name, session_col_w)),
+            format!("{} ", align_fixed_field(&e.project, project_col_w)),
+            Style::default().fg(MAGENTA),
+        ),
+        Span::styled(
+            format!("{} ", align_fixed_field(&e.session_name, session_col_w)),
             Style::default().fg(WHITE),
         ),
         Span::styled(icons::BRANCH, Style::default().fg(DIM)),
