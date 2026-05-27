@@ -9,6 +9,7 @@ use nucleo_matcher::{Config, Matcher, Utf32Str};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 
+use crate::commands::switch::SwitchTarget;
 use crate::state::WorktreeEntry;
 use crate::tmux;
 use crate::ui::{Age, icons};
@@ -22,16 +23,23 @@ const SESSION_REFRESH_POLL: Duration = Duration::from_millis(50);
 const SESSION_COL_MAX: usize = 35;
 const PROJECT_COL_MAX: usize = 28;
 
-#[tracing::instrument(level = "info", name = "switch.pick", skip(entries))]
-pub fn pick(entries: &[WorktreeEntry]) -> Result<Option<WorktreeEntry>> {
-    let mut presence = tracing::info_span!("tmux.session_presence", len = entries.len())
-        .in_scope(|| tmux::prepare_picker_presence(entries));
+#[tracing::instrument(level = "info", name = "switch.pick", skip(targets))]
+pub fn pick(targets: &[SwitchTarget]) -> Result<Option<SwitchTarget>> {
+    let worktrees: Vec<WorktreeEntry> = targets
+        .iter()
+        .filter_map(|t| match t {
+            SwitchTarget::Worktree(e) => Some(e.clone()),
+            SwitchTarget::Session(_) => None,
+        })
+        .collect();
+    let mut presence = tracing::info_span!("tmux.session_presence", len = worktrees.len())
+        .in_scope(|| tmux::prepare_picker_presence(&worktrees));
 
     stderr_ui_begin()?;
 
     let backend = CrosstermBackend::new(std::io::stderr());
     let mut terminal = Terminal::new(backend)?;
-    let result = run_picker(&mut terminal, entries, &mut presence);
+    let result = run_picker(&mut terminal, targets, &mut presence);
 
     stderr_ui_end()?;
 
@@ -57,11 +65,11 @@ struct PickerState {
 }
 
 impl PickerState {
-    fn new(entries: &[WorktreeEntry]) -> Self {
+    fn new(targets: &[SwitchTarget]) -> Self {
         Self {
             input: String::new(),
             list_state: ListState::default().with_selected(Some(0)),
-            filtered: entries.iter().enumerate().map(|(i, _)| (i, 0)).collect(),
+            filtered: targets.iter().enumerate().map(|(i, _)| (i, 0)).collect(),
         }
     }
 }
@@ -69,15 +77,26 @@ impl PickerState {
 enum PickAction {
     Continue,
     Cancel,
-    Choose(Option<WorktreeEntry>),
+    Choose(Option<SwitchTarget>),
 }
 
-fn drain_alive_updates(presence: &mut tmux::PickerPresence) {
+fn worktree_count(targets: &[SwitchTarget]) -> usize {
+    targets.iter().filter(|t| t.worktree().is_some()).count()
+}
+
+fn is_alive(targets: &[SwitchTarget], presence: &tmux::PickerPresence, idx: usize) -> bool {
+    match &targets[idx] {
+        SwitchTarget::Worktree(_) => presence.alive.get(idx).copied().unwrap_or(false),
+        SwitchTarget::Session(_) => true,
+    }
+}
+
+fn drain_alive_updates(presence: &mut tmux::PickerPresence, worktrees: usize) {
     let Some(rx) = presence.updates.as_ref() else {
         return;
     };
     while let Ok(next) = rx.try_recv() {
-        if next.len() == presence.alive.len() {
+        if next.len() == worktrees {
             presence.alive = next;
         }
     }
@@ -86,35 +105,37 @@ fn drain_alive_updates(presence: &mut tmux::PickerPresence) {
 /// Blocks until a key event. While waiting, merges tmux refresh payloads and redraws.
 fn wait_polled_key_event(
     presence: &mut tmux::PickerPresence,
+    worktrees: usize,
     terminal: &mut Terminal<CrosstermBackend<std::io::Stderr>>,
-    entries: &[WorktreeEntry],
+    targets: &[SwitchTarget],
     state: &mut PickerState,
 ) -> Result<Event> {
     loop {
         if event::poll(SESSION_REFRESH_POLL)? {
             return Ok(event::read()?);
         }
-        drain_alive_updates(presence);
+        drain_alive_updates(presence, worktrees);
         let now = Timestamp::now();
-        terminal.draw(|f| draw(f, entries, &presence.alive, state, now))?;
+        terminal.draw(|f| draw(f, targets, presence, state, now))?;
     }
 }
 
 fn run_picker(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stderr>>,
-    entries: &[WorktreeEntry],
+    targets: &[SwitchTarget],
     presence: &mut tmux::PickerPresence,
-) -> Result<Option<WorktreeEntry>> {
-    let mut state = PickerState::new(entries);
+) -> Result<Option<SwitchTarget>> {
+    let worktrees = worktree_count(targets);
+    let mut state = PickerState::new(targets);
 
     loop {
-        drain_alive_updates(presence);
+        drain_alive_updates(presence, worktrees);
 
         let now = Timestamp::now();
-        terminal.draw(|f| draw(f, entries, &presence.alive, &mut state, now))?;
+        terminal.draw(|f| draw(f, targets, presence, &mut state, now))?;
 
         let event = if presence.updates.is_some() {
-            wait_polled_key_event(presence, terminal, entries, &mut state)?
+            wait_polled_key_event(presence, worktrees, terminal, targets, &mut state)?
         } else {
             event::read()?
         };
@@ -123,7 +144,7 @@ fn run_picker(
             continue;
         };
 
-        match dispatch_pick_key(key, entries, &mut state) {
+        match dispatch_pick_key(key, targets, &mut state) {
             PickAction::Continue => {}
             PickAction::Cancel => return Ok(None),
             PickAction::Choose(entry) => return Ok(entry),
@@ -133,7 +154,7 @@ fn run_picker(
 
 fn dispatch_pick_key(
     key: KeyEvent,
-    entries: &[WorktreeEntry],
+    targets: &[SwitchTarget],
     state: &mut PickerState,
 ) -> PickAction {
     if key.kind != KeyEventKind::Press {
@@ -142,7 +163,7 @@ fn dispatch_pick_key(
 
     match key.code {
         KeyCode::Esc => PickAction::Cancel,
-        KeyCode::Enter => PickAction::Choose(selected_entry(entries, state)),
+        KeyCode::Enter => PickAction::Choose(selected_target(targets, state)),
         KeyCode::Up => {
             let i = state.list_state.selected().unwrap_or(0);
             state.list_state.select(Some(i.saturating_sub(1)));
@@ -158,29 +179,29 @@ fn dispatch_pick_key(
         }
         KeyCode::Backspace => {
             state.input.pop();
-            refilter(entries, state);
+            refilter(targets, state);
             PickAction::Continue
         }
         KeyCode::Char(c) => {
             state.input.push(c);
-            refilter(entries, state);
+            refilter(targets, state);
             PickAction::Continue
         }
         _ => PickAction::Continue,
     }
 }
 
-fn selected_entry(entries: &[WorktreeEntry], state: &PickerState) -> Option<WorktreeEntry> {
+fn selected_target(targets: &[SwitchTarget], state: &PickerState) -> Option<SwitchTarget> {
     let sel = state.list_state.selected().unwrap_or(0);
     state
         .filtered
         .get(sel)
-        .map(|(idx, _)| entries[*idx].clone())
+        .map(|(idx, _)| targets[*idx].clone())
 }
 
-fn refilter(entries: &[WorktreeEntry], state: &mut PickerState) {
+fn refilter(targets: &[SwitchTarget], state: &mut PickerState) {
     if state.input.is_empty() {
-        state.filtered = entries.iter().enumerate().map(|(i, _)| (i, 0)).collect();
+        state.filtered = targets.iter().enumerate().map(|(i, _)| (i, 0)).collect();
     } else {
         let mut matcher = Matcher::new(Config::DEFAULT);
         let atom = Atom::new(
@@ -191,11 +212,11 @@ fn refilter(entries: &[WorktreeEntry], state: &mut PickerState) {
             false,
         );
         let mut buf = Vec::new();
-        state.filtered = entries
+        state.filtered = targets
             .iter()
             .enumerate()
-            .filter_map(|(i, e)| {
-                let haystack = format!("{} {} {}", e.project, e.branch, e.session_name);
+            .filter_map(|(i, target)| {
+                let haystack = target.fuzzy_text();
                 let utf32 = Utf32Str::new(&haystack, &mut buf);
                 atom.score(utf32, &mut matcher).map(|score| (i, score))
             })
@@ -207,8 +228,8 @@ fn refilter(entries: &[WorktreeEntry], state: &mut PickerState) {
 
 fn draw(
     f: &mut Frame,
-    entries: &[WorktreeEntry],
-    alive: &[bool],
+    targets: &[SwitchTarget],
+    presence: &tmux::PickerPresence,
     state: &mut PickerState,
     now: Timestamp,
 ) {
@@ -241,27 +262,36 @@ fn draw(
     f.set_cursor_position((chunks[0].x + state.input.len() as u16 + 1, chunks[0].y + 1));
 
     let project_col_w = capped_column_width(
-        entries,
+        targets,
         &state.filtered,
         PROJECT_COL_MAX,
-        |e| e.project.chars().count(),
+        project_field_width,
     );
     let session_col_w = capped_column_width(
-        entries,
+        targets,
         &state.filtered,
         SESSION_COL_MAX,
-        |e| e.session_name.chars().count(),
+        |t| t.session_name().chars().count(),
     );
     let items: Vec<ListItem> = state
         .filtered
         .iter()
-        .map(|(idx, _)| build_row(entries, alive, *idx, now, project_col_w, session_col_w))
+        .map(|(idx, _)| build_row(targets, presence, *idx, now, project_col_w, session_col_w))
         .collect();
 
     let count = state.filtered.len();
-    let total = entries.len();
+    let total = targets.len();
+    let has_sessions = targets
+        .iter()
+        .any(|t| matches!(t, SwitchTarget::Session(_)));
     let title = if state.input.is_empty() {
-        format!(" worktrees ({total}) ")
+        if has_sessions {
+            format!(" worktrees + sessions ({total}) ")
+        } else {
+            format!(" worktrees ({total}) ")
+        }
+    } else if has_sessions {
+        format!(" worktrees + sessions ({count}/{total}) ")
     } else {
         format!(" worktrees ({count}/{total}) ")
     };
@@ -293,15 +323,22 @@ fn draw(
     f.render_widget(Paragraph::new(help), chunks[2]);
 }
 
+fn project_field_width(target: &SwitchTarget) -> usize {
+    match target {
+        SwitchTarget::Worktree(e) => e.project.chars().count(),
+        SwitchTarget::Session(_) => 1,
+    }
+}
+
 fn capped_column_width(
-    entries: &[WorktreeEntry],
+    targets: &[SwitchTarget],
     filtered: &[(usize, u16)],
     cap: usize,
-    mut measure: impl FnMut(&WorktreeEntry) -> usize,
+    mut measure: impl FnMut(&SwitchTarget) -> usize,
 ) -> usize {
     filtered
         .iter()
-        .map(|(idx, _)| measure(&entries[*idx]))
+        .map(|(idx, _)| measure(&targets[*idx]))
         .max()
         .unwrap_or(0)
         .min(cap)
@@ -313,15 +350,32 @@ fn align_fixed_field(value: &str, width: usize) -> String {
 }
 
 fn build_row(
-    entries: &[WorktreeEntry],
-    alive: &[bool],
+    targets: &[SwitchTarget],
+    presence: &tmux::PickerPresence,
     idx: usize,
     now: Timestamp,
     project_col_w: usize,
     session_col_w: usize,
 ) -> ListItem<'static> {
-    let e = &entries[idx];
-    let is_alive = alive[idx];
+    match &targets[idx] {
+        SwitchTarget::Worktree(e) => build_worktree_row(
+            e,
+            is_alive(targets, presence, idx),
+            now,
+            project_col_w,
+            session_col_w,
+        ),
+        SwitchTarget::Session(name) => build_session_row(name, project_col_w, session_col_w),
+    }
+}
+
+fn build_worktree_row(
+    e: &WorktreeEntry,
+    is_alive: bool,
+    now: Timestamp,
+    project_col_w: usize,
+    session_col_w: usize,
+) -> ListItem<'static> {
     let age = Age::from_timestamps(now, e.last_used_at);
     let age_color = age.bracket().ratatui_color();
 
@@ -348,6 +402,23 @@ fn build_row(
         ),
         Span::styled(icons::BRANCH, Style::default().fg(DIM)),
         Span::styled(e.branch.clone(), Style::default().fg(DIM)),
+    ];
+
+    ListItem::new(Line::from(spans))
+}
+
+fn build_session_row(name: &str, project_col_w: usize, session_col_w: usize) -> ListItem<'static> {
+    let spans = vec![
+        Span::styled("  ", Style::default().fg(Color::Green)),
+        Span::styled("·    ", Style::default().fg(DIM)),
+        Span::styled(
+            format!("{} ", align_fixed_field("—", project_col_w)),
+            Style::default().fg(DIM),
+        ),
+        Span::styled(
+            format!("{} ", align_fixed_field(name, session_col_w)),
+            Style::default().fg(WHITE),
+        ),
     ];
 
     ListItem::new(Line::from(spans))

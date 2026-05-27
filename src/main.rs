@@ -28,7 +28,7 @@ fn main() -> Result<()> {
         cli::Command::Attach { path } => {
             commands::attach::run(cli.project.as_deref(), path)
         }
-        cli::Command::Switch => commands::switch::run(),
+        cli::Command::Switch { all_sessions } => commands::switch::run(all_sessions),
         cli::Command::Remove {
             name,
             branch,

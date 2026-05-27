@@ -29,7 +29,11 @@ pub enum Command {
     },
 
     /// Fuzzy-pick a worktree and switch to its tmux session
-    Switch,
+    Switch {
+        /// Include ad-hoc tmux sessions not tied to a tracked worktree
+        #[arg(long)]
+        all_sessions: bool,
+    },
 
     /// List tracked worktrees
     List {
