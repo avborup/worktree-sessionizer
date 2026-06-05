@@ -12,7 +12,7 @@ use crate::ui;
 #[tracing::instrument(level = "info", name = "prune.run")]
 pub fn run(days_override: Option<u32>, auto_yes: bool) -> Result<()> {
     let config = Config::load()?;
-    let mut state = State::load()?;
+    let state = State::load()?;
 
     let threshold_days = days_override.unwrap_or(config.prune_after_days);
     let now = Timestamp::now();
@@ -137,11 +137,15 @@ pub fn run(days_override: Option<u32>, auto_yes: bool) -> Result<()> {
             Action::RemoveOnly => {}
             Action::Skip => unreachable!(),
         }
-
-        state.remove(id);
     }
 
-    state.save()?;
+    let removed_ids: Vec<_> = to_remove.iter().map(|(id, ..)| id.clone()).collect();
+    State::mutate(|state| {
+        for id in removed_ids {
+            state.remove(&id);
+        }
+        Ok(())
+    })?;
 
     let count = to_remove.len();
     if count > 0 {

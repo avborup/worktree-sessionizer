@@ -39,7 +39,7 @@ impl SwitchTarget {
 
 #[tracing::instrument(level = "info", name = "switch.run")]
 pub fn run(all_sessions: bool) -> Result<()> {
-    let mut state = State::load()?;
+    let state = State::load()?;
 
     let mut live: Vec<_> = state
         .worktrees
@@ -95,8 +95,10 @@ pub fn run(all_sessions: bool) -> Result<()> {
                 layout::create_session(&entry.session_name, &entry.path, pane_cmd)?;
             }
 
-            state.touch(&entry.id);
-            state.save()?;
+            State::mutate(|state| {
+                state.touch(&entry.id);
+                Ok(())
+            })?;
 
             layout::attach_or_switch(&entry.session_name)?;
         }

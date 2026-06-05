@@ -18,7 +18,7 @@ pub fn run(
     new_branch: Option<String>,
 ) -> Result<()> {
     let config = Config::load()?;
-    let mut state = State::load()?;
+    let state = State::load()?;
     let proj = project::resolve(explicit_project, &config, &state)?;
 
     let (base, branch, is_new_branch) = match new_branch {
@@ -89,8 +89,10 @@ pub fn run(
         session_name.clone(),
         base.clone(),
     );
-    state.add(entry);
-    state.save()?;
+    State::mutate(|state| {
+        state.add(entry);
+        Ok(())
+    })?;
 
     ui::step_done("done — attaching\n");
     layout::attach_or_switch(&session_name)?;

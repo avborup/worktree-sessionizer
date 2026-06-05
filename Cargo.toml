@@ -8,6 +8,7 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
 directories = "6"
+fs2 = "0.4"
 owo-colors = "4"
 jiff = { version = "0.2", features = ["serde"] }
 nucleo-matcher = "0.3"

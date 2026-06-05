@@ -13,7 +13,7 @@ use crate::ui;
 #[tracing::instrument(level = "info", name = "attach.run")]
 pub fn run(explicit_project: Option<&str>, path: Option<String>) -> Result<()> {
     let config = Config::load()?;
-    let mut state = State::load()?;
+    let state = State::load()?;
 
     let worktree_path = match path {
         Some(p) => PathBuf::from(p),
@@ -51,8 +51,13 @@ pub fn run(explicit_project: Option<&str>, path: Option<String>) -> Result<()> {
         session_name,
         None,
     );
-    state.add(entry);
-    state.save()?;
+    State::mutate(|state| {
+        if state.worktrees.iter().any(|e| e.path == entry.path) {
+            bail!("worktree already tracked: {}", entry.path.display());
+        }
+        state.add(entry);
+        Ok(())
+    })?;
 
     ui::step_done(&format!(
         "attached {} · {}\n",

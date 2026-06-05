@@ -10,7 +10,7 @@ use crate::ui;
 #[tracing::instrument(level = "info", name = "remove.run")]
 pub fn run(name: String, delete_branch: bool, force_branch: bool) -> Result<()> {
     let config = Config::load()?;
-    let mut state = State::load()?;
+    let state = State::load()?;
 
     let entry = state
         .worktrees
@@ -53,8 +53,11 @@ pub fn run(name: String, delete_branch: bool, force_branch: bool) -> Result<()> 
     }
 
     ui::step("saving metadata");
-    state.remove(&entry.id);
-    state.save()?;
+    let entry_id = entry.id.clone();
+    State::mutate(|state| {
+        state.remove(&entry_id);
+        Ok(())
+    })?;
 
     ui::step_done(&format!(
         "removed {} · {}\n",
