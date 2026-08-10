@@ -40,6 +40,9 @@ fn main() -> Result<()> {
             verbose,
         } => commands::list::run(sort, json, verbose),
         cli::Command::Prune { days, yes } => commands::prune::run(days, yes),
+        cli::Command::Info { project_name } => {
+            commands::info::run(cli.project.as_deref(), project_name)
+        }
         cli::Command::Project { action } => commands::project::run(action),
     }
 }

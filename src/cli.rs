@@ -75,6 +75,13 @@ pub enum Command {
         yes: bool,
     },
 
+    /// Show info about the current project
+    Info {
+        /// Print only the project name as a plain string (for shell interpolation)
+        #[arg(long)]
+        project_name: bool,
+    },
+
     /// Manage registered projects
     Project {
         #[command(subcommand)]

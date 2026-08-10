@@ -40,6 +40,8 @@ wt switch
 | `wt switch` | Fuzzy picker to switch between worktrees |
 | `wt list` | List tracked worktrees |
 | `wt list -v` | Verbose list with full details |
+| `wt info` | Show info about the current project |
+| `wt info --project-name` | Print only the project name (for shell interpolation) |
 | `wt remove <name>` | Remove a worktree by branch or session name |
 | `wt remove <name> --branch` | Remove worktree and delete the branch |
 | `wt prune` | Remove worktrees unused for 30+ days |

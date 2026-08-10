@@ -21,8 +21,7 @@ pub fn run(days_override: Option<u32>, auto_yes: bool) -> Result<()> {
         .worktrees
         .iter()
         .filter(|e| {
-            let age = now.since(e.last_used_at).ok();
-            age.is_some_and(|span| i64::from(span.get_hours()) / 24 >= threshold_days as i64)
+            ui::Age::from_timestamps(now, e.last_used_at).days() >= threshold_days as i64
         })
         .map(|e| e.id.clone())
         .collect();
@@ -46,10 +45,7 @@ pub fn run(days_override: Option<u32>, auto_yes: bool) -> Result<()> {
 
     for id in &stale_ids {
         let entry = state.worktrees.iter().find(|e| &e.id == id).unwrap();
-        let age_days = now
-            .since(entry.last_used_at)
-            .map(|s| i64::from(s.get_hours()) / 24)
-            .unwrap_or(0);
+        let age_days = ui::Age::from_timestamps(now, entry.last_used_at).days();
 
         let proj = config.find_project(&entry.project);
         let base = entry.base_branch.as_deref().unwrap_or("main");
