@@ -53,10 +53,20 @@ pub fn unset_upstream(worktree: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn worktree_remove(repo: &Path, worktree: &Path) -> Result<()> {
+fn worktree_remove_args(worktree: &Path, force: bool) -> Vec<String> {
+    let mut args = vec!["worktree".to_string(), "remove".to_string()];
+    if force {
+        args.push("--force".to_string());
+    }
+    args.push(worktree.to_string_lossy().into_owned());
+    args
+}
+
+pub fn worktree_remove(repo: &Path, worktree: &Path, force: bool) -> Result<()> {
+    let args = worktree_remove_args(worktree, force);
     let out = Command::new("git")
         .args(["-C", &repo.to_string_lossy()])
-        .args(["worktree", "remove", &worktree.to_string_lossy()])
+        .args(&args)
         .output()
         .context("running git worktree remove")?;
     if !out.status.success() {
@@ -111,4 +121,27 @@ pub fn is_branch_merged(repo: &Path, branch: &str, into: &str) -> Result<bool> {
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
     Ok(stdout.lines().any(|line| line.trim().trim_start_matches("* ") == branch))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::worktree_remove_args;
+
+    #[test]
+    fn worktree_remove_args_omit_force_by_default() {
+        assert_eq!(
+            worktree_remove_args(Path::new("/worktree"), false),
+            vec!["worktree", "remove", "/worktree"]
+        );
+    }
+
+    #[test]
+    fn worktree_remove_args_include_force_when_requested() {
+        assert_eq!(
+            worktree_remove_args(Path::new("/worktree"), true),
+            vec!["worktree", "remove", "--force", "/worktree"]
+        );
+    }
 }

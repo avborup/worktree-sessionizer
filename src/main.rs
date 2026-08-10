@@ -32,14 +32,19 @@ fn main() -> Result<()> {
         cli::Command::Remove {
             name,
             branch,
-            force_branch,
-        } => commands::remove::run(name, branch, force_branch),
+            force,
+        } => commands::remove::run(name, branch, force),
         cli::Command::List {
             sort,
             json,
             verbose,
         } => commands::list::run(sort, json, verbose),
-        cli::Command::Prune { days, yes } => commands::prune::run(days, yes),
+        cli::Command::Prune {
+            days,
+            yes,
+            branch,
+            force,
+        } => commands::prune::run(days, yes, branch, force),
         cli::Command::Info { project_name } => {
             commands::info::run(cli.project.as_deref(), project_name)
         }

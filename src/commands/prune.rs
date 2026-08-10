@@ -10,7 +10,12 @@ use crate::state::State;
 use crate::ui;
 
 #[tracing::instrument(level = "info", name = "prune.run")]
-pub fn run(days_override: Option<u32>, auto_yes: bool) -> Result<()> {
+pub fn run(
+    days_override: Option<u32>,
+    auto_yes: bool,
+    delete_branch: bool,
+    force: bool,
+) -> Result<()> {
     let config = Config::load()?;
     let state = State::load()?;
 
@@ -79,11 +84,7 @@ pub fn run(days_override: Option<u32>, auto_yes: bool) -> Result<()> {
             merged_label
         );
 
-        let default_action = if merged {
-            Action::DeleteBranch
-        } else {
-            Action::RemoveOnly
-        };
+        let default_action = Action::RemoveOnly;
 
         let action = if auto_yes {
             default_action
@@ -96,13 +97,15 @@ pub fn run(days_override: Option<u32>, auto_yes: bool) -> Result<()> {
                 eprintln!("    {}\n", "skipped".dimmed());
             }
             _ => {
-                to_remove.push((id.clone(), entry.branch.clone(), entry.path.clone(), action));
+                to_remove.push((id.clone(), entry.branch.clone(), entry.path.clone()));
                 eprintln!();
             }
         }
     }
 
-    for (id, branch, path, action) in &to_remove {
+    let mut removed_ids = Vec::new();
+
+    for (id, branch, path) in &to_remove {
         let proj_entry = state.worktrees.iter().find(|e| &e.id == id);
         let repo_path = proj_entry.and_then(|e| {
             config
@@ -110,32 +113,39 @@ pub fn run(days_override: Option<u32>, auto_yes: bool) -> Result<()> {
                 .map(|p| p.repo_path.clone())
         });
 
-        if path.exists()
+        let worktree_removed = if path.exists()
             && let Some(repo) = &repo_path
         {
             ui::step(&format!("removing worktree {}", path.display().dimmed()));
-            if let Err(e) = git::worktree_remove(repo, path) {
+            match git::worktree_remove(repo, path, force) {
+                Ok(()) => true,
+                Err(e) => {
+                    eprintln!("    {} {}", "!".red(), e);
+                    false
+                }
+            }
+        } else {
+            true
+        };
+
+        if !worktree_removed {
+            continue;
+        }
+
+        if delete_branch
+            && let Some(repo) = &repo_path
+        {
+            let label = if force { "force-deleting" } else { "deleting" };
+            ui::step(&format!("{} branch {}", label, branch.yellow()));
+            if let Err(e) = git::branch_delete(repo, branch, force) {
                 eprintln!("    {} {}", "!".red(), e);
             }
         }
 
-        match action {
-            Action::DeleteBranch | Action::ForceDeleteBranch => {
-                if let Some(repo) = &repo_path {
-                    let force = matches!(action, Action::ForceDeleteBranch);
-                    let label = if force { "force-deleting" } else { "deleting" };
-                    ui::step(&format!("{} branch {}", label, branch.yellow()));
-                    if let Err(e) = git::branch_delete(repo, branch, force) {
-                        eprintln!("    {} {}", "!".red(), e);
-                    }
-                }
-            }
-            Action::RemoveOnly => {}
-            Action::Skip => unreachable!(),
-        }
+        removed_ids.push(id.clone());
     }
 
-    let removed_ids: Vec<_> = to_remove.iter().map(|(id, ..)| id.clone()).collect();
+    let count = removed_ids.len();
     State::mutate(|state| {
         for id in removed_ids {
             state.remove(&id);
@@ -143,7 +153,6 @@ pub fn run(days_override: Option<u32>, auto_yes: bool) -> Result<()> {
         Ok(())
     })?;
 
-    let count = to_remove.len();
     if count > 0 {
         ui::step_done(&format!("pruned {} worktree(s)\n", count));
     }
@@ -154,24 +163,18 @@ pub fn run(days_override: Option<u32>, auto_yes: bool) -> Result<()> {
 #[derive(Clone, Copy)]
 enum Action {
     RemoveOnly,
-    DeleteBranch,
-    ForceDeleteBranch,
     Skip,
 }
 
 fn prompt_action(default: Action) -> Result<Action> {
     let default_char = match default {
         Action::RemoveOnly => 'r',
-        Action::DeleteBranch => 'd',
-        Action::ForceDeleteBranch => 'D',
         Action::Skip => 's',
     };
     eprint!(
-        "    {} [{}]emove worktree / remove + [{}]elete branch / force-[{}]elete / [{}]kip [{}]: ",
+        "    {} [{}]emove worktree / [{}]kip [{}]: ",
         "?".cyan(),
         "r".cyan(),
-        "d".cyan(),
-        "D".cyan(),
         "s".cyan(),
         default_char.to_string().white().bold(),
     );
@@ -187,8 +190,6 @@ fn prompt_action(default: Action) -> Result<Action> {
 
     match input {
         "r" => Ok(Action::RemoveOnly),
-        "d" => Ok(Action::DeleteBranch),
-        "D" => Ok(Action::ForceDeleteBranch),
         "s" => Ok(Action::Skip),
         _ => {
             eprintln!("    {}", "invalid choice, skipping".dimmed());

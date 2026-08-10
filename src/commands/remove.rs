@@ -8,7 +8,7 @@ use crate::tmux;
 use crate::ui;
 
 #[tracing::instrument(level = "info", name = "remove.run")]
-pub fn run(name: String, delete_branch: bool, force_branch: bool) -> Result<()> {
+pub fn run(name: String, delete_branch: bool, force: bool) -> Result<()> {
     let config = Config::load()?;
     let state = State::load()?;
 
@@ -41,15 +41,15 @@ pub fn run(name: String, delete_branch: bool, force_branch: bool) -> Result<()> 
         && let Some(proj) = config.find_project(&entry.project)
     {
         ui::step(&format!("removing worktree at {}", entry.path.display().dimmed()));
-        git::worktree_remove(&proj.repo_path, &entry.path)?;
+        git::worktree_remove(&proj.repo_path, &entry.path, force)?;
     }
 
-    if (delete_branch || force_branch)
+    if delete_branch
         && let Some(proj) = config.find_project(&entry.project)
     {
-        let label = if force_branch { "force-deleting" } else { "deleting" };
+        let label = if force { "force-deleting" } else { "deleting" };
         ui::step(&format!("{} branch {}", label, entry.branch.yellow()));
-        git::branch_delete(&proj.repo_path, &entry.branch, force_branch)?;
+        git::branch_delete(&proj.repo_path, &entry.branch, force)?;
     }
 
     ui::step("saving metadata");

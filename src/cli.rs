@@ -59,9 +59,9 @@ pub enum Command {
         #[arg(long)]
         branch: bool,
 
-        /// Force-delete the git branch (even if unmerged)
-        #[arg(long, short = 'D')]
-        force_branch: bool,
+        /// Discard modified and untracked worktree files before removal
+        #[arg(long)]
+        force: bool,
     },
 
     /// Remove stale worktrees
@@ -73,6 +73,14 @@ pub enum Command {
         /// Accept defaults without prompting
         #[arg(long)]
         yes: bool,
+
+        /// Also delete each worktree's git branch
+        #[arg(long)]
+        branch: bool,
+
+        /// Discard modified and untracked worktree files before removal
+        #[arg(long)]
+        force: bool,
     },
 
     /// Show info about the current project
@@ -123,4 +131,47 @@ pub enum SortOrder {
     Created,
     Branch,
     Project,
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{Cli, Command};
+
+    #[test]
+    fn remove_branch_and_force_parse_together() {
+        let cli =
+            Cli::try_parse_from(["wt", "remove", "feature/x", "--branch", "--force"]).unwrap();
+
+        match cli.command {
+            Command::Remove {
+                name,
+                branch,
+                force,
+            } => {
+                assert_eq!(name, "feature/x");
+                assert!(branch);
+                assert!(force);
+            }
+            _ => panic!("expected remove command"),
+        }
+    }
+
+    #[test]
+    fn prune_branch_and_force_parse_together() {
+        let cli =
+            Cli::try_parse_from(["wt", "prune", "--yes", "--branch", "--force"]).unwrap();
+
+        match cli.command {
+            Command::Prune {
+                yes, branch, force, ..
+            } => {
+                assert!(yes);
+                assert!(branch);
+                assert!(force);
+            }
+            _ => panic!("expected prune command"),
+        }
+    }
 }

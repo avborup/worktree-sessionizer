@@ -44,8 +44,11 @@ wt switch
 | `wt info --project-name` | Print only the project name (for shell interpolation) |
 | `wt remove <name>` | Remove a worktree by branch or session name |
 | `wt remove <name> --branch` | Remove worktree and delete the branch |
+| `wt remove <name> --force` | Discard worktree changes and untracked files; with `--branch`, force-delete the branch |
 | `wt prune` | Remove worktrees unused for 30+ days |
 | `wt prune --days 14` | Custom staleness threshold |
+| `wt prune --branch` | Remove stale worktrees and delete their branches |
+| `wt prune --force` | Discard worktree changes and untracked files; with `--branch`, force-delete branches |
 | `wt project add` | Register a project |
 | `wt project list` | List registered projects |
 | `wt project remove` | Unregister a project |
