@@ -9,9 +9,9 @@ use nucleo_matcher::pattern::{Atom, AtomKind, CaseMatching, Normalization};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
+use wt::state::WorktreeEntry;
 
 use crate::commands::switch::SwitchTarget;
-use crate::state::WorktreeEntry;
 use crate::tmux;
 use crate::ui::{Age, icons};
 

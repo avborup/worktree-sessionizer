@@ -4,9 +4,8 @@ use std::process::Command;
 use std::sync::mpsc;
 
 use anyhow::{Context, Result, bail};
-
-use crate::paths;
-use crate::state::WorktreeEntry;
+use wt::paths;
+use wt::state::WorktreeEntry;
 
 /// Initial alive flags for the switch picker, optionally paired with a channel that delivers a
 /// fresher vector after a background `tmux list-sessions`.

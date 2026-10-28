@@ -2,9 +2,9 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 
 use anyhow::Result;
+use wt::state::{State, WorktreeEntry};
 
 use crate::layout;
-use crate::state::{State, WorktreeEntry};
 use crate::tmux;
 
 mod picker;
@@ -85,7 +85,7 @@ pub fn run(all_sessions: bool) -> Result<()> {
     match target {
         SwitchTarget::Worktree(entry) => {
             if !tmux::session_exists(&entry.session_name) {
-                let config = crate::config::Config::load()?;
+                let config = wt::config::Config::load()?;
                 let proj = config.find_project(&entry.project).ok_or_else(|| {
                     anyhow::anyhow!("project '{}' not found in config", entry.project)
                 })?;

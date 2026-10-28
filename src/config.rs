@@ -44,9 +44,14 @@ fn dirs_home() -> Option<PathBuf> {
 }
 
 impl Config {
-    #[tracing::instrument(level = "info", name = "config.load")]
     pub fn load() -> Result<Self> {
-        let path = config_path();
+        Self::load_in(&paths::data_dir())
+    }
+
+    /// The config in `home` (a wt data dir), or the default when it has none.
+    #[tracing::instrument(level = "info", name = "config.load")]
+    pub fn load_in(home: &Path) -> Result<Self> {
+        let path = paths::config_path(home);
         if !path.exists() {
             return Ok(Self::default());
         }
@@ -56,7 +61,7 @@ impl Config {
     }
 
     pub fn save(&self) -> Result<()> {
-        let path = config_path();
+        let path = paths::config_path(&paths::data_dir());
         paths::atomic_write(&path, &toml::to_string_pretty(self)?)
     }
 
@@ -67,8 +72,4 @@ impl Config {
     pub fn find_project_by_path(&self, dir: &Path) -> Option<&ProjectConfig> {
         self.projects.iter().find(|p| dir.starts_with(&p.repo_path))
     }
-}
-
-fn config_path() -> PathBuf {
-    paths::data_dir().join("config.toml")
 }

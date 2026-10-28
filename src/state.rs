@@ -1,5 +1,5 @@
 use std::fs::{File, OpenOptions};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use fs2::FileExt;
@@ -28,9 +28,14 @@ pub struct WorktreeEntry {
 }
 
 impl State {
-    #[tracing::instrument(level = "info", name = "state.load")]
     pub fn load() -> Result<Self> {
-        let path = state_path();
+        Self::load_in(&paths::data_dir())
+    }
+
+    /// The state in `home` (a wt data dir), read without the lock.
+    #[tracing::instrument(level = "info", name = "state.load")]
+    pub fn load_in(home: &Path) -> Result<Self> {
+        let path = paths::state_path(home);
         if !path.exists() {
             return Ok(Self::default());
         }
@@ -39,23 +44,30 @@ impl State {
         toml::from_str(&contents).with_context(|| "parsing state.toml")
     }
 
-    pub fn save(&self) -> Result<()> {
-        let path = state_path();
+    fn save_in(&self, home: &Path) -> Result<()> {
+        let path = paths::state_path(home);
         paths::atomic_write(&path, &toml::to_string_pretty(self)?)
+    }
+
+    pub fn mutate<F, T>(f: F) -> Result<T>
+    where
+        F: FnOnce(&mut Self) -> Result<T>,
+    {
+        Self::mutate_in(&paths::data_dir(), f)
     }
 
     /// Reload state under an exclusive lock, apply `f`, and persist.
     ///
     /// Use this for all writes so concurrent commands cannot clobber each other's
     /// updates while long-running work (e.g. cow clone) is in progress.
-    pub fn mutate<F, T>(f: F) -> Result<T>
+    pub fn mutate_in<F, T>(home: &Path, f: F) -> Result<T>
     where
         F: FnOnce(&mut Self) -> Result<T>,
     {
-        let _lock = StateLock::acquire()?;
-        let mut state = Self::load()?;
+        let _lock = StateLock::acquire(home)?;
+        let mut state = Self::load_in(home)?;
         let result = f(&mut state)?;
-        state.save()?;
+        state.save_in(home)?;
         Ok(result)
     }
 
@@ -96,21 +108,13 @@ impl WorktreeEntry {
     }
 }
 
-fn state_path() -> PathBuf {
-    paths::data_dir().join("state.toml")
-}
-
-fn lock_path() -> PathBuf {
-    paths::data_dir().join("state.lock")
-}
-
 struct StateLock {
     _file: File,
 }
 
 impl StateLock {
-    fn acquire() -> Result<Self> {
-        let path = lock_path();
+    fn acquire(home: &Path) -> Result<Self> {
+        let path = paths::lock_path(home);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("creating directory {}", parent.display()))?;

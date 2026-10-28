@@ -2,11 +2,11 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use owo_colors::OwoColorize;
+use wt::config::Config;
+use wt::git;
+use wt::project;
+use wt::state::State;
 
-use crate::config::Config;
-use crate::git;
-use crate::project;
-use crate::state::State;
 use crate::ui;
 
 #[tracing::instrument(level = "info", name = "gc.run")]

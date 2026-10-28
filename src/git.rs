@@ -141,6 +141,60 @@ pub fn branch_delete(repo: &Path, branch: &str, force: bool) -> Result<()> {
     Ok(())
 }
 
+pub fn branch_exists(repo: &Path, branch: &str) -> Result<bool> {
+    let out = Command::new("git")
+        .args(["-C", &repo.to_string_lossy()])
+        .args(["show-ref", "--verify", "--quiet"])
+        .arg(format!("refs/heads/{branch}"))
+        .output()
+        .context("running git show-ref")?;
+    match out.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => bail!(
+            "git show-ref failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
+    }
+}
+
+/// Anything `git status` would show, untracked files and submodule changes
+/// included. Ignored files don't count.
+pub fn is_dirty(worktree: &Path) -> Result<bool> {
+    let out = Command::new("git")
+        .args(["-C", &worktree.to_string_lossy()])
+        .args([
+            "status",
+            "--porcelain",
+            "--ignore-submodules=none",
+            "--untracked-files=normal",
+        ])
+        .output()
+        .context("running git status")?;
+    if !out.status.success() {
+        bail!(
+            "git status failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(!out.stdout.iter().all(u8::is_ascii_whitespace))
+}
+
+/// The branch `origin/HEAD` points at, without the `origin/`, or `main` when
+/// the repo has no such ref.
+pub fn default_branch(repo: &Path) -> Result<String> {
+    let out = Command::new("git")
+        .args(["-C", &repo.to_string_lossy()])
+        .args(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])
+        .output()
+        .context("running git symbolic-ref")?;
+    let target = String::from_utf8_lossy(&out.stdout);
+    match target.trim().strip_prefix("refs/remotes/origin/") {
+        Some(branch) if out.status.success() && !branch.is_empty() => Ok(branch.to_string()),
+        _ => Ok("main".to_string()),
+    }
+}
+
 pub fn current_branch(worktree: &Path) -> Result<String> {
     let out = Command::new("git")
         .args(["-C", &worktree.to_string_lossy()])

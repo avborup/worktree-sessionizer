@@ -2,14 +2,11 @@ use std::io::Write;
 
 use anyhow::{Result, bail};
 use owo_colors::OwoColorize;
+use wt::{CreateWorktree, Wt, project};
 
-use crate::clone;
-use crate::config::Config;
 use crate::layout;
-use crate::project;
-use crate::state::{State, WorktreeEntry};
+use crate::tmux;
 use crate::ui;
-use crate::{git, tmux};
 
 #[tracing::instrument(level = "info", name = "new.run")]
 pub fn run(
@@ -17,17 +14,18 @@ pub fn run(
     branch: String,
     new_branch: Option<String>,
 ) -> Result<()> {
-    let config = Config::load()?;
-    let state = State::load()?;
+    let wt = Wt::from_env();
+    let config = wt.config()?;
+    let state = wt.state()?;
     let proj = project::resolve(explicit_project, &config, &state)?;
 
-    let (base, branch, is_new_branch) = match new_branch {
-        Some(nb) => (Some(branch), nb, true),
-        None => (None, branch, false),
+    let (base, branch) = match new_branch {
+        Some(nb) => (Some(branch), nb),
+        None => (None, branch),
     };
 
+    // `create` checks this too; checking here refuses before the prompt.
     let target = project::worktree_path(&config.worktrees_root, &proj.name, &branch);
-
     if target.exists() {
         bail!("worktree already exists at {}", target.display());
     }
@@ -38,40 +36,6 @@ pub fn run(
         branch.white().bold(),
     );
 
-    if is_new_branch {
-        let base_ref = base.as_deref().unwrap();
-        ui::step(&format!(
-            "branching {} from {}",
-            branch.white(),
-            base_ref.dimmed()
-        ));
-        git::worktree_add_new_branch(&proj.repo_path, &target, &branch, base_ref)?;
-        git::unset_upstream(&target)?;
-    } else {
-        ui::step(&format!("checking out {}", branch.white()));
-        git::worktree_add(&proj.repo_path, &target, &branch)?;
-    }
-    ui::step_done(&format!("{}", target.display().dimmed()));
-
-    for entry in &proj.cow_clone {
-        let src = proj.repo_path.join(entry);
-        let dst = target.join(entry);
-        if src.exists() {
-            ui::step(&format!("cow cloning {}", entry.cyan()));
-            clone::cow_clone(&src, &dst)?;
-        }
-    }
-
-    for entry in &proj.symlink {
-        let src = proj.repo_path.join(entry);
-        let dst = target.join(entry);
-        if src.exists() {
-            ui::step(&format!("symlinking {}", entry.cyan()));
-            std::os::unix::fs::symlink(&src, &dst)?;
-        }
-    }
-
-    eprintln!();
     let session_name = prompt_session_name()?;
     eprintln!();
 
@@ -79,27 +43,24 @@ pub fn run(
         bail!("tmux session '{}' already exists", session_name);
     }
 
+    let entry = wt.create_with(
+        &CreateWorktree {
+            project: proj.name.clone(),
+            branch,
+            base,
+            session_name,
+        },
+        ui::progress,
+    )?;
+
     let default_shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
     let pane_cmd = proj.pane_command.as_deref().unwrap_or(&default_shell);
 
-    ui::step(&format!("creating session {}", session_name.green()));
-    layout::create_session(&session_name, &target, pane_cmd)?;
-
-    ui::step("saving metadata");
-    let entry = WorktreeEntry::new(
-        proj.name.clone(),
-        branch.clone(),
-        target,
-        session_name.clone(),
-        base.clone(),
-    );
-    State::mutate(|state| {
-        state.add(entry);
-        Ok(())
-    })?;
+    ui::step(&format!("creating session {}", entry.session_name.green()));
+    layout::create_session(&entry.session_name, &entry.path, pane_cmd)?;
 
     ui::step_done("done — attaching\n");
-    layout::attach_or_switch(&session_name)?;
+    layout::attach_or_switch(&entry.session_name)?;
 
     Ok(())
 }

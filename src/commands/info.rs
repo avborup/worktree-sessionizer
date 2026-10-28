@@ -3,10 +3,10 @@ use std::path::Path;
 use anyhow::Result;
 use jiff::Timestamp;
 use owo_colors::OwoColorize;
+use wt::config::{Config, ProjectConfig};
+use wt::project;
+use wt::state::{State, WorktreeEntry};
 
-use crate::config::{Config, ProjectConfig};
-use crate::project;
-use crate::state::{State, WorktreeEntry};
 use crate::ui::Age;
 
 #[tracing::instrument(level = "info", name = "info.run")]

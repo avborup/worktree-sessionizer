@@ -3,11 +3,11 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 use owo_colors::OwoColorize;
+use wt::config::Config;
+use wt::git;
+use wt::project;
+use wt::state::{State, WorktreeEntry};
 
-use crate::config::Config;
-use crate::git;
-use crate::project;
-use crate::state::{State, WorktreeEntry};
 use crate::ui;
 
 #[tracing::instrument(level = "info", name = "attach.run")]

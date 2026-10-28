@@ -1,12 +1,6 @@
 mod cli;
-mod clone;
 mod commands;
-mod config;
-mod git;
 mod layout;
-mod paths;
-mod project;
-mod state;
 mod tmux;
 mod trace;
 mod ui;

@@ -3,10 +3,10 @@ use std::io::Write;
 use anyhow::Result;
 use jiff::Timestamp;
 use owo_colors::OwoColorize;
+use wt::config::Config;
+use wt::git;
+use wt::state::State;
 
-use crate::config::Config;
-use crate::git;
-use crate::state::State;
 use crate::ui;
 
 #[tracing::instrument(level = "info", name = "prune.run")]

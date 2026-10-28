@@ -103,3 +103,32 @@ full = "rm -rf target"
 ## Metadata
 
 Worktree state is tracked in `~/Library/Application Support/wt/state.toml`. This file is managed by the tool — don't edit it by hand unless you need to backdate `last_used_at` for testing `prune`.
+
+Set `WT_HOME` to use another data dir (`config.toml`, `state.toml`, `state.lock`) instead, e.g. for tests.
+
+## Library
+
+The crate is also a library: the worktree bookkeeping behind `wt new` and `wt remove`, without tmux or the TUI. It shares the data dir with the binary and writes `state.toml` only under `state.lock`, so worktrees it creates show up in `wt list` and `wt switch`.
+
+```toml
+[dependencies]
+wt = { path = "../wt", default-features = false }
+```
+
+```rust
+use wt::{CreateWorktree, RemoveOptions, Wt};
+
+let wt = Wt::from_env(); // $WT_HOME, else the platform data dir; Wt::at(dir) for any other
+let entry = wt.create(&CreateWorktree {
+    project: "myapp".into(),
+    branch: "feat/x".into(),
+    base: Some("main".into()), // None checks out an existing branch
+    session_name: "x".into(),
+})?;
+wt.touch(&entry.id)?;
+wt.remove(&entry.id, RemoveOptions { delete_branch: true, force: false })?;
+```
+
+`create` branches from `base` (or checks out the branch), cow clones and symlinks the project's entries, then saves the entry. If anything fails after git adds the worktree, it removes the worktree again, and the branch too if it created it. `create_with` and `remove_with` also take a callback that receives each `Step`, for progress output. `config()`, `state()` and `mutate(|state| …)` read and change the files directly; `wt::git` has the git helpers.
+
+The `cli` feature (on by default) adds the `wt` binary and its dependencies (clap, ratatui, crossterm, nucleo-matcher, owo-colors, serde_json, tracing-subscriber). Library users turn it off with `default-features = false`.

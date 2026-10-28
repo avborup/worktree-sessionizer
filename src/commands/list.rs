@@ -3,9 +3,9 @@ use std::cmp::Reverse;
 use anyhow::Result;
 use jiff::Timestamp;
 use owo_colors::OwoColorize;
+use wt::state::{State, WorktreeEntry};
 
 use crate::cli::SortOrder;
-use crate::state::{State, WorktreeEntry};
 use crate::tmux;
 use crate::ui::{Age, icons};
 

@@ -1,5 +1,6 @@
 use jiff::Timestamp;
 use owo_colors::OwoColorize;
+use wt::Step;
 
 pub struct Age {
     pub seconds: i64,
@@ -75,6 +76,29 @@ pub fn step(message: &str) {
 
 pub fn step_done(message: &str) {
     eprintln!("  {} {}", "✓".green(), message);
+}
+
+/// Prints a library step the way `wt new` and `wt remove` always have.
+pub fn progress(event: Step) {
+    match event {
+        Step::Branching { branch, base } => step(&format!(
+            "branching {} from {}",
+            branch.white(),
+            base.dimmed()
+        )),
+        Step::CheckingOut { branch } => step(&format!("checking out {}", branch.white())),
+        Step::WorktreeAdded { path } => step_done(&format!("{}", path.display().dimmed())),
+        Step::CowCloning { entry } => step(&format!("cow cloning {}", entry.cyan())),
+        Step::Symlinking { entry } => step(&format!("symlinking {}", entry.cyan())),
+        Step::RemovingWorktree { path } => {
+            step(&format!("removing worktree at {}", path.display().dimmed()))
+        }
+        Step::DeletingBranch { branch, force } => {
+            let label = if force { "force-deleting" } else { "deleting" };
+            step(&format!("{} branch {}", label, branch.yellow()))
+        }
+        Step::SavingMetadata => step("saving metadata"),
+    }
 }
 
 pub mod icons {

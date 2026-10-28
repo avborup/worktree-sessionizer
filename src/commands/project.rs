@@ -1,8 +1,8 @@
 use anyhow::{Result, bail};
 use owo_colors::OwoColorize;
+use wt::config::{Config, ProjectConfig};
 
 use crate::cli::ProjectAction;
-use crate::config::{Config, ProjectConfig};
 use crate::ui;
 
 #[tracing::instrument(level = "info", name = "project.run", skip(action))]

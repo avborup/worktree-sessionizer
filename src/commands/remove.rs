@@ -1,16 +1,14 @@
 use anyhow::{Result, bail};
 use owo_colors::OwoColorize;
+use wt::{RemoveOptions, Wt};
 
-use crate::config::Config;
-use crate::git;
-use crate::state::State;
 use crate::tmux;
 use crate::ui;
 
 #[tracing::instrument(level = "info", name = "remove.run")]
 pub fn run(name: String, delete_branch: bool, force: bool) -> Result<()> {
-    let config = Config::load()?;
-    let state = State::load()?;
+    let wt = Wt::from_env();
+    let state = wt.state()?;
 
     let entry = state
         .worktrees
@@ -37,28 +35,14 @@ pub fn run(name: String, delete_branch: bool, force: bool) -> Result<()> {
         tmux::kill_session(&entry.session_name)?;
     }
 
-    if entry.path.exists()
-        && let Some(proj) = config.find_project(&entry.project)
-    {
-        ui::step(&format!(
-            "removing worktree at {}",
-            entry.path.display().dimmed()
-        ));
-        git::worktree_remove(&proj.repo_path, &entry.path, force)?;
-    }
-
-    if delete_branch && let Some(proj) = config.find_project(&entry.project) {
-        let label = if force { "force-deleting" } else { "deleting" };
-        ui::step(&format!("{} branch {}", label, entry.branch.yellow()));
-        git::branch_delete(&proj.repo_path, &entry.branch, force)?;
-    }
-
-    ui::step("saving metadata");
-    let entry_id = entry.id.clone();
-    State::mutate(|state| {
-        state.remove(&entry_id);
-        Ok(())
-    })?;
+    wt.remove_with(
+        &entry.id,
+        RemoveOptions {
+            delete_branch,
+            force,
+        },
+        ui::progress,
+    )?;
 
     ui::step_done(&format!(
         "removed {} · {}\n",
