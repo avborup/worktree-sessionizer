@@ -38,6 +38,7 @@ pub fn run(action: ProjectAction) -> Result<()> {
                 pane_command,
                 cow_clone: Vec::new(),
                 symlink: Vec::new(),
+                gc: Default::default(),
             });
             config.save()?;
 

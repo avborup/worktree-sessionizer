@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -22,6 +23,9 @@ pub struct ProjectConfig {
     pub cow_clone: Vec<String>,
     #[serde(default)]
     pub symlink: Vec<String>,
+    /// Named commands run by `wt gc <name>` in the repo and every git worktree
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub gc: BTreeMap<String, String>,
 }
 
 impl Default for Config {

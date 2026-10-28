@@ -45,6 +45,9 @@ fn main() -> Result<()> {
             branch,
             force,
         } => commands::prune::run(days, yes, branch, force),
+        cli::Command::Gc { name, dry_run } => {
+            commands::gc::run(cli.project.as_deref(), name, dry_run)
+        }
         cli::Command::Info { project_name } => {
             commands::info::run(cli.project.as_deref(), project_name)
         }

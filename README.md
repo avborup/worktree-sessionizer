@@ -49,6 +49,8 @@ wt switch
 | `wt prune --days 14` | Custom staleness threshold |
 | `wt prune --branch` | Remove stale worktrees and delete their branches |
 | `wt prune --force` | Discard worktree changes and untracked files; with `--branch`, force-delete branches |
+| `wt gc <name>` | Run the project's named gc command in the repo and every worktree |
+| `wt gc <name> --dry-run` | List the directories `wt gc` would run in |
 | `wt project add` | Register a project |
 | `wt project list` | List registered projects |
 | `wt project remove` | Unregister a project |
@@ -89,6 +91,14 @@ symlink = [".eslintcache"]
 ```
 
 `cow_clone` entries are copied using macOS `clonefile()` (instant, copy-on-write). `symlink` entries are symlinked from the main repo.
+
+`gc` is an optional table of named shell commands. `wt gc <name>` runs one with `sh -c` in the main repo and every git worktree of the project, then reports the disk space freed:
+
+```toml
+[projects.gc]
+light = "find target -path '*/deps/*.rcgu.o' -mtime +3 -delete"
+full = "rm -rf target"
+```
 
 ## Metadata
 

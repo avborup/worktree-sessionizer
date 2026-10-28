@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use anyhow::{Context, Result, bail};
@@ -169,6 +169,29 @@ pub fn is_branch_merged(repo: &Path, branch: &str, into: &str) -> Result<bool> {
     Ok(stdout.lines().any(|line| line.trim().trim_start_matches("* ") == branch))
 }
 
+pub fn worktree_list(repo: &Path) -> Result<Vec<PathBuf>> {
+    let out = Command::new("git")
+        .args(["-C", &repo.to_string_lossy()])
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .context("listing worktrees")?;
+    if !out.status.success() {
+        bail!(
+            "git worktree list failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(parse_worktree_list(&String::from_utf8_lossy(&out.stdout)))
+}
+
+fn parse_worktree_list(porcelain: &str) -> Vec<PathBuf> {
+    porcelain
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .map(PathBuf::from)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -176,7 +199,18 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use super::{worktree_remove, worktree_remove_args};
+    use super::{parse_worktree_list, worktree_remove, worktree_remove_args};
+
+    #[test]
+    fn parse_worktree_list_reads_paths_in_order() {
+        let porcelain = "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n\
+                         worktree /wt/feat x\nHEAD def\ndetached\nprunable gitdir file points to non-existent location\n";
+
+        assert_eq!(
+            parse_worktree_list(porcelain),
+            vec![PathBuf::from("/repo"), PathBuf::from("/wt/feat x")]
+        );
+    }
 
     fn git(dir: &Path, args: &[&str]) {
         let out = Command::new("git")

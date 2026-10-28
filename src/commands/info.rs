@@ -63,6 +63,10 @@ fn render(project: &ProjectConfig, worktree: Option<&WorktreeEntry>, now: Timest
             project.symlink.join(", ").dimmed()
         );
     }
+    if !project.gc.is_empty() {
+        let names: Vec<&str> = project.gc.keys().map(String::as_str).collect();
+        let _ = writeln!(out, "    {} {}", "gc".dimmed(), names.join(", ").dimmed());
+    }
 
     if let Some(e) = worktree {
         let age = Age::from_timestamps(now, e.last_used_at);
@@ -96,6 +100,7 @@ mod tests {
             pane_command: Some("fish".to_string()),
             cow_clone: Vec::new(),
             symlink: Vec::new(),
+            gc: Default::default(),
         }
     }
 

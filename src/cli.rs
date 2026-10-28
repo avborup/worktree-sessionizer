@@ -83,6 +83,16 @@ pub enum Command {
         force: bool,
     },
 
+    /// Run a named gc command in the repo and every git worktree of the project
+    Gc {
+        /// Name of the command under the project's `gc` config table
+        name: String,
+
+        /// List the directories without running anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Show info about the current project
     Info {
         /// Print only the project name as a plain string (for shell interpolation)
