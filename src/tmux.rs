@@ -28,7 +28,7 @@ pub fn prepare_picker_presence(entries: &[WorktreeEntry]) -> PickerPresence {
                 alive: alive_flags(entries, &running),
                 updates: None,
             }
-        },
+        }
     }
 }
 

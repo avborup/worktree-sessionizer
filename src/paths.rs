@@ -18,9 +18,7 @@ pub fn atomic_write(path: &std::path::Path, contents: &str) -> Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating directory {}", parent.display()))?;
     }
-    let dir = path
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."));
+    let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
     let mut tmp = tempfile::NamedTempFile::new_in(dir)
         .with_context(|| format!("creating temp file in {}", dir.display()))?;
     std::io::Write::write_all(&mut tmp, contents.as_bytes())?;

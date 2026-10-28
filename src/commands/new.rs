@@ -40,7 +40,11 @@ pub fn run(
 
     if is_new_branch {
         let base_ref = base.as_deref().unwrap();
-        ui::step(&format!("branching {} from {}", branch.white(), base_ref.dimmed()));
+        ui::step(&format!(
+            "branching {} from {}",
+            branch.white(),
+            base_ref.dimmed()
+        ));
         git::worktree_add_new_branch(&proj.repo_path, &target, &branch, base_ref)?;
         git::unset_upstream(&target)?;
     } else {

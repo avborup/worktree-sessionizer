@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -221,7 +222,7 @@ fn refilter(targets: &[SwitchTarget], state: &mut PickerState) {
                 atom.score(utf32, &mut matcher).map(|score| (i, score))
             })
             .collect();
-        state.filtered.sort_by(|a, b| b.1.cmp(&a.1));
+        state.filtered.sort_by_key(|&(_, score)| Reverse(score));
     }
     state.list_state.select(Some(0));
 }
@@ -267,12 +268,9 @@ fn draw(
         PROJECT_COL_MAX,
         project_field_width,
     );
-    let session_col_w = capped_column_width(
-        targets,
-        &state.filtered,
-        SESSION_COL_MAX,
-        |t| t.session_name().chars().count(),
-    );
+    let session_col_w = capped_column_width(targets, &state.filtered, SESSION_COL_MAX, |t| {
+        t.session_name().chars().count()
+    });
     let items: Vec<ListItem> = state
         .filtered
         .iter()

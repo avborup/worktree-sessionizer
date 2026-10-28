@@ -25,9 +25,7 @@ pub fn run(
     let stale_ids: Vec<_> = state
         .worktrees
         .iter()
-        .filter(|e| {
-            ui::Age::from_timestamps(now, e.last_used_at).days() >= threshold_days as i64
-        })
+        .filter(|e| ui::Age::from_timestamps(now, e.last_used_at).days() >= threshold_days as i64)
         .map(|e| e.id.clone())
         .collect();
 
@@ -71,11 +69,7 @@ pub fn run(
             entry.branch.white(),
             age_days.to_string().yellow()
         );
-        eprintln!(
-            "    {} {}",
-            "path".dimmed(),
-            entry.path.display().dimmed()
-        );
+        eprintln!("    {} {}", "path".dimmed(), entry.path.display().dimmed());
         eprintln!(
             "    {} {} (merged into {}: {})",
             "branch".dimmed(),
@@ -107,11 +101,8 @@ pub fn run(
 
     for (id, branch, path) in &to_remove {
         let proj_entry = state.worktrees.iter().find(|e| &e.id == id);
-        let repo_path = proj_entry.and_then(|e| {
-            config
-                .find_project(&e.project)
-                .map(|p| p.repo_path.clone())
-        });
+        let repo_path =
+            proj_entry.and_then(|e| config.find_project(&e.project).map(|p| p.repo_path.clone()));
 
         let worktree_removed = if path.exists()
             && let Some(repo) = &repo_path
@@ -132,9 +123,7 @@ pub fn run(
             continue;
         }
 
-        if delete_branch
-            && let Some(repo) = &repo_path
-        {
+        if delete_branch && let Some(repo) = &repo_path {
             let label = if force { "force-deleting" } else { "deleting" };
             ui::step(&format!("{} branch {}", label, branch.yellow()));
             if let Err(e) = git::branch_delete(repo, branch, force) {

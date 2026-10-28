@@ -32,10 +32,7 @@ pub fn run(explicit_project: Option<&str>, path: Option<String>) -> Result<()> {
     let branch = git::current_branch(&worktree_path)?;
     let proj = project::resolve(explicit_project, &config, &state)?;
 
-    eprintln!(
-        "\n  attaching worktree to {}\n",
-        proj.name.magenta(),
-    );
+    eprintln!("\n  attaching worktree to {}\n", proj.name.magenta(),);
 
     ui::step(&format!("detected branch {}", branch.white()));
     ui::step(&format!("path {}", worktree_path.display().dimmed()));

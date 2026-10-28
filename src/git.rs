@@ -166,7 +166,9 @@ pub fn is_branch_merged(repo: &Path, branch: &str, into: &str) -> Result<bool> {
         return Ok(false);
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
-    Ok(stdout.lines().any(|line| line.trim().trim_start_matches("* ") == branch))
+    Ok(stdout
+        .lines()
+        .any(|line| line.trim().trim_start_matches("* ") == branch))
 }
 
 pub fn worktree_list(repo: &Path) -> Result<Vec<PathBuf>> {

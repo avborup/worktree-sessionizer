@@ -56,7 +56,11 @@ pub fn run(action: ProjectAction) -> Result<()> {
                 eprintln!("    {} {}", "repo".dimmed(), p.repo_path.display().dimmed());
                 eprintln!("    {} {}", "shell".dimmed(), cmd.dimmed());
                 if !p.cow_clone.is_empty() {
-                    eprintln!("    {} {}", "clone".dimmed(), p.cow_clone.join(", ").dimmed());
+                    eprintln!(
+                        "    {} {}",
+                        "clone".dimmed(),
+                        p.cow_clone.join(", ").dimmed()
+                    );
                 }
                 if !p.symlink.is_empty() {
                     eprintln!("    {} {}", "link".dimmed(), p.symlink.join(", ").dimmed());

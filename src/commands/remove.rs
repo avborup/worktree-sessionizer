@@ -40,13 +40,14 @@ pub fn run(name: String, delete_branch: bool, force: bool) -> Result<()> {
     if entry.path.exists()
         && let Some(proj) = config.find_project(&entry.project)
     {
-        ui::step(&format!("removing worktree at {}", entry.path.display().dimmed()));
+        ui::step(&format!(
+            "removing worktree at {}",
+            entry.path.display().dimmed()
+        ));
         git::worktree_remove(&proj.repo_path, &entry.path, force)?;
     }
 
-    if delete_branch
-        && let Some(proj) = config.find_project(&entry.project)
-    {
+    if delete_branch && let Some(proj) = config.find_project(&entry.project) {
         let label = if force { "force-deleting" } else { "deleting" };
         ui::step(&format!("{} branch {}", label, entry.branch.yellow()));
         git::branch_delete(&proj.repo_path, &entry.branch, force)?;

@@ -14,34 +14,29 @@
 use std::io::Write as _;
 use std::time::{Duration, Instant};
 
+use tracing::Subscriber;
 use tracing::field::{Field, Visit};
 use tracing::span::{Attributes, Id, Record};
-use tracing::Subscriber;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 use tracing_subscriber::registry::{LookupSpan, Registry};
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 const PROFILE_ENV: &str = "WT_PROFILE";
 
 pub fn init() {
     let profile = profile_enabled();
 
-    let mut filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("error"));
+    let mut filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("error"));
 
     if profile {
-        filter = filter.add_directive(
-            "wt=info"
-                .parse()
-                .expect("wt=info directive"),
-        );
+        filter = filter.add_directive("wt=info".parse().expect("wt=info directive"));
     }
 
     if profile {
         Registry::default()
             .with(filter)
-            .with(TreeProfileLayer::default())
+            .with(TreeProfileLayer)
             .init();
     } else {
         tracing_subscriber::fmt()

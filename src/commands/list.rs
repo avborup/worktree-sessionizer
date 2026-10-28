@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+
 use anyhow::Result;
 use jiff::Timestamp;
 use owo_colors::OwoColorize;
@@ -5,7 +7,7 @@ use owo_colors::OwoColorize;
 use crate::cli::SortOrder;
 use crate::state::{State, WorktreeEntry};
 use crate::tmux;
-use crate::ui::{icons, Age};
+use crate::ui::{Age, icons};
 
 #[tracing::instrument(level = "info", name = "list.run")]
 pub fn run(sort: SortOrder, json: bool, verbose: bool) -> Result<()> {
@@ -19,8 +21,8 @@ pub fn run(sort: SortOrder, json: bool, verbose: bool) -> Result<()> {
     let mut entries = state.worktrees.clone();
 
     match sort {
-        SortOrder::LastUsed => entries.sort_by(|a, b| b.last_used_at.cmp(&a.last_used_at)),
-        SortOrder::Created => entries.sort_by(|a, b| b.created_at.cmp(&a.created_at)),
+        SortOrder::LastUsed => entries.sort_by_key(|e| Reverse(e.last_used_at)),
+        SortOrder::Created => entries.sort_by_key(|e| Reverse(e.created_at)),
         SortOrder::Branch => entries.sort_by(|a, b| a.branch.cmp(&b.branch)),
         SortOrder::Project => entries.sort_by(|a, b| a.project.cmp(&b.project)),
     }
@@ -117,27 +119,11 @@ fn print_verbose(entries: &[WorktreeEntry], now: Timestamp) {
             e.project.magenta(),
             bracket.paint(&age.label()),
         );
-        println!(
-            "  {} {}",
-            "branch".dimmed(),
-            e.branch.white(),
-        );
-        println!(
-            "  {} {}",
-            "session".dimmed(),
-            e.session_name,
-        );
-        println!(
-            "  {} {}",
-            "path".dimmed(),
-            e.path.display().dimmed(),
-        );
+        println!("  {} {}", "branch".dimmed(), e.branch.white(),);
+        println!("  {} {}", "session".dimmed(), e.session_name,);
+        println!("  {} {}", "path".dimmed(), e.path.display().dimmed(),);
         if let Some(base) = &e.base_branch {
-            println!(
-                "  {} {}",
-                "base".dimmed(),
-                base.dimmed(),
-            );
+            println!("  {} {}", "base".dimmed(), base.dimmed(),);
         }
     }
 }

@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::HashSet;
 
 use anyhow::Result;
@@ -47,12 +48,9 @@ pub fn run(all_sessions: bool) -> Result<()> {
         .filter(|e| e.path.exists())
         .cloned()
         .collect();
-    live.sort_by(|a, b| b.last_used_at.cmp(&a.last_used_at));
+    live.sort_by_key(|e| Reverse(e.last_used_at));
 
-    let mut targets: Vec<SwitchTarget> = live
-        .into_iter()
-        .map(SwitchTarget::Worktree)
-        .collect();
+    let mut targets: Vec<SwitchTarget> = live.into_iter().map(SwitchTarget::Worktree).collect();
 
     if all_sessions {
         let registered: HashSet<String> = targets
