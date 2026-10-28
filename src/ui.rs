@@ -98,6 +98,7 @@ pub fn progress(event: Step) {
             step(&format!("{} branch {}", label, branch.yellow()))
         }
         Step::SavingMetadata => step("saving metadata"),
+        _ => {}
     }
 }
 

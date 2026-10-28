@@ -35,6 +35,7 @@ pub struct RemoveOptions {
 /// What `create_with` and `remove_with` are about to do, for callers that
 /// show progress.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum Step<'a> {
     Branching { branch: &'a str, base: &'a str },
     CheckingOut { branch: &'a str },
@@ -100,30 +101,43 @@ impl Wt {
             bail!("worktree already exists at {}", target.display());
         }
 
+        // A branch that only exists once `git worktree add` has run is this
+        // call's to delete on rollback, whether `-b` made it or git made a
+        // local branch tracking origin's.
+        let branch_existed = git::branch_exists(&proj.repo_path, &req.branch)?;
+
+        self.add_worktree(proj, req, &target, &mut on_step)
+            .map_err(|err| {
+                match rollback_create(&proj.repo_path, &target, &req.branch, branch_existed) {
+                    Ok(()) => err,
+                    Err(rollback) => anyhow!("{err:#} (rollback failed too: {rollback:#})"),
+                }
+            })
+    }
+
+    fn add_worktree(
+        &self,
+        proj: &ProjectConfig,
+        req: &CreateWorktree,
+        target: &Path,
+        on_step: &mut impl FnMut(Step),
+    ) -> Result<WorktreeEntry> {
         match &req.base {
             Some(base) => {
                 on_step(Step::Branching {
                     branch: &req.branch,
                     base,
                 });
-                git::worktree_add_new_branch(&proj.repo_path, &target, &req.branch, base)?;
+                git::worktree_add_new_branch(&proj.repo_path, target, &req.branch, base)?;
             }
             None => {
                 on_step(Step::CheckingOut {
                     branch: &req.branch,
                 });
-                git::worktree_add(&proj.repo_path, &target, &req.branch)?;
+                git::worktree_add(&proj.repo_path, target, &req.branch)?;
             }
         }
-
-        self.finish_create(proj, req, &target, &mut on_step)
-            .map_err(|err| {
-                let created_branch = req.base.is_some().then_some(req.branch.as_str());
-                match rollback_create(&proj.repo_path, &target, created_branch) {
-                    Ok(()) => err,
-                    Err(rollback) => anyhow!("{err:#} (rollback failed too: {rollback:#})"),
-                }
-            })
+        self.finish_create(proj, req, target, on_step)
     }
 
     fn finish_create(
@@ -222,10 +236,13 @@ impl Wt {
     }
 }
 
-/// Undo a `create` whose worktree git already added: only what that call made.
-fn rollback_create(repo: &Path, target: &Path, created_branch: Option<&str>) -> Result<()> {
-    git::worktree_remove(repo, target, true)?;
-    if let Some(branch) = created_branch {
+/// Undo a failed `create`: only what that call made. The target didn't exist
+/// before it, and the branch is its own if it exists now but didn't then.
+fn rollback_create(repo: &Path, target: &Path, branch: &str, branch_existed: bool) -> Result<()> {
+    if target.exists() {
+        git::worktree_remove(repo, target, true)?;
+    }
+    if !branch_existed && git::branch_exists(repo, branch)? {
         git::branch_delete(repo, branch, true)?;
     }
     Ok(())

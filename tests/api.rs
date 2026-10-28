@@ -65,9 +65,6 @@ impl Fixture {
         std::fs::create_dir_all(repo.join("node_modules")).unwrap();
 
         git_ok(&repo, &["init", "-q", "-b", "main"]);
-        // Branching from a local branch then records an upstream, so
-        // `create` has one to unset.
-        git_ok(&repo, &["config", "branch.autoSetupMerge", "always"]);
         std::fs::write(repo.join("README.md"), "hi").unwrap();
         std::fs::write(repo.join(".gitignore"), "node_modules/\n.eslintcache\n").unwrap();
         std::fs::write(repo.join("node_modules/x"), "dep").unwrap();
@@ -128,6 +125,9 @@ fn req(project: &str, branch: &str, base: Option<&str>) -> CreateWorktree {
 #[test]
 fn create_new_branch_from_base() {
     let f = Fixture::new();
+    // Branching from a local branch then records an upstream, so `create` has
+    // one to unset.
+    git_ok(&f.repo, &["config", "branch.autoSetupMerge", "always"]);
 
     let entry = f.wt.create(&req("app", "feat/x", Some("main"))).unwrap();
 
@@ -241,6 +241,56 @@ fn create_rollback_keeps_existing_branch() {
     assert!(
         branch_exists(&f.repo, "keep"),
         "a branch it did not create stays"
+    );
+    assert_eq!(f.worktree_count(), 1, "worktree unregistered from git");
+    assert_eq!(f.state_toml(), None, "nothing saved");
+}
+
+#[test]
+fn create_rollback_deletes_branch_it_made_from_origin() {
+    let f = Fixture::new();
+    let origin = f.home.with_file_name("origin.git");
+    git_ok(
+        f.home.parent().unwrap(),
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            &f.repo.to_string_lossy(),
+            &origin.to_string_lossy(),
+        ],
+    );
+    git_ok(&origin, &["branch", "remote-only", "main"]);
+    git_ok(
+        &f.repo,
+        &["remote", "add", "origin", &origin.to_string_lossy()],
+    );
+    git_ok(&f.repo, &["fetch", "-q", "origin"]);
+    assert!(
+        !branch_exists(&f.repo, "remote-only"),
+        "only on origin to begin with"
+    );
+
+    // git turns `remote-only` into a new local branch tracking origin's.
+    f.wt.create(&req("broken", "remote-only", None))
+        .expect_err("symlinking over a tracked file must fail");
+
+    assert!(
+        !f.root.join("broken").join("remote-only").exists(),
+        "worktree dir removed"
+    );
+    assert!(
+        !branch_exists(&f.repo, "remote-only"),
+        "the local branch git made is deleted"
+    );
+    git_ok(
+        &f.repo,
+        &[
+            "rev-parse",
+            "--verify",
+            "-q",
+            "refs/remotes/origin/remote-only",
+        ],
     );
     assert_eq!(f.worktree_count(), 1, "worktree unregistered from git");
     assert_eq!(f.state_toml(), None, "nothing saved");

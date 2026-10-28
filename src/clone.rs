@@ -8,24 +8,32 @@ pub fn cow_clone(src: &Path, dst: &Path) -> Result<()> {
         if clonefile(src, dst).is_ok() {
             return Ok(());
         }
-        let status = Command::new("/bin/cp")
+        let out = Command::new("/bin/cp")
             .args(["-Rc"])
             .arg(src)
             .arg(dst)
-            .status()
+            .output()
             .context("cp -Rc")?;
-        if !status.success() {
-            anyhow::bail!("cp -Rc failed for {}", src.display());
+        if !out.status.success() {
+            anyhow::bail!(
+                "cp -Rc failed for {}: {}",
+                src.display(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
         }
     } else {
-        let status = Command::new("/bin/cp")
+        let out = Command::new("/bin/cp")
             .args(["-R", "--reflink=auto"])
             .arg(src)
             .arg(dst)
-            .status()
+            .output()
             .context("cp --reflink=auto")?;
-        if !status.success() {
-            anyhow::bail!("cp --reflink=auto failed for {}", src.display());
+        if !out.status.success() {
+            anyhow::bail!(
+                "cp --reflink=auto failed for {}: {}",
+                src.display(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
         }
     }
     Ok(())
