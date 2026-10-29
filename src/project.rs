@@ -1,15 +1,11 @@
 use std::path::PathBuf;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::config::{Config, ProjectConfig};
 use crate::state::State;
 
-pub fn resolve(
-    explicit: Option<&str>,
-    config: &Config,
-    state: &State,
-) -> Result<ProjectConfig> {
+pub fn resolve(explicit: Option<&str>, config: &Config, state: &State) -> Result<ProjectConfig> {
     if let Some(name) = explicit {
         return config
             .find_project(name)
@@ -24,15 +20,12 @@ pub fn resolve(
     }
 
     if let Some(entry) = state.worktrees.iter().find(|e| cwd.starts_with(&e.path)) {
-        return config
-            .find_project(&entry.project)
-            .cloned()
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "worktree's project '{}' is no longer registered",
-                    entry.project
-                )
-            });
+        return config.find_project(&entry.project).cloned().ok_or_else(|| {
+            anyhow::anyhow!(
+                "worktree's project '{}' is no longer registered",
+                entry.project
+            )
+        });
     }
 
     bail!(

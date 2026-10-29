@@ -170,8 +170,7 @@ mod tests {
 
     #[test]
     fn prune_branch_and_force_parse_together() {
-        let cli =
-            Cli::try_parse_from(["wt", "prune", "--yes", "--branch", "--force"]).unwrap();
+        let cli = Cli::try_parse_from(["wt", "prune", "--yes", "--branch", "--force"]).unwrap();
 
         match cli.command {
             Command::Prune {
